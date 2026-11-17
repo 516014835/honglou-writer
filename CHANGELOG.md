@@ -15,3 +15,4 @@
 - `loadProject` / `saveProject` / `parseProject`，带结构校验
 - 命令行工具 `hlw`：`init` `add` `char` `plant` `pay` `check` `stats` `chars` `open`
 - `hlw serve`：局域网网页界面，手机浏览器可写正文、管人物与伏笔
+- AI 写作面板：`hlw ai --key` 配置，网页里可对话、按当前章节续写并一键插入正文

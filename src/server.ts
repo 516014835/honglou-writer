@@ -2,6 +2,15 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { networkInterfaces } from 'node:os';
 import { checkProject } from './check.js';
+import {
+  AiError,
+  buildContinuePrompt,
+  buildSystemPrompt,
+  loadAiConfig,
+  publicAiConfig,
+  requestCompletion,
+  saveAiConfig,
+} from './ai.js';
 import { loadProject, saveProject } from './io.js';
 import { addChapter, addCharacter, findChapter, payForeshadow, plantForeshadow } from './project.js';
 import { projectStat } from './stats.js';
@@ -107,6 +116,51 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
   const host = options.host ?? '0.0.0.0';
 
   const persist = () => saveProject(options.file, project);
+
+  /** 把上游模型的 SSE 原样转给浏览器；浏览器断开时顺手中断上游 */
+  async function streamChat(
+    req: IncomingMessage,
+    res: ServerResponse,
+    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  ): Promise<void> {
+    const config = await loadAiConfig();
+    if (!config.apiKey) throw new HttpError(400, '还没配置 API Key');
+
+    const controller = new AbortController();
+    req.on('close', () => controller.abort());
+
+    let upstream: Response;
+    try {
+      upstream = await requestCompletion(config, messages, { signal: controller.signal });
+    } catch (error) {
+      if (error instanceof AiError) throw new HttpError(502, error.message);
+      throw error;
+    }
+
+    res.writeHead(200, {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'x-accel-buffering': 'no',
+    });
+
+    const body = upstream.body;
+    if (!body) {
+      res.end();
+      return;
+    }
+    const reader = body.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) res.write(Buffer.from(value));
+      }
+    } catch {
+      // 客户端断开或上游中断，直接收尾
+    }
+    res.end();
+  }
 
   const server: Server = createServer((req, res) => {
     handle(req, res).catch((error: unknown) => {
@@ -229,6 +283,62 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
       if (!item) throw new HttpError(404, `找不到伏笔：${id}`);
       await persist();
       json(res, 200, { foreshadow: item });
+      return;
+    }
+
+    if (method === 'GET' && path === '/api/ai/config') {
+      json(res, 200, publicAiConfig(await loadAiConfig()));
+      return;
+    }
+
+    if (method === 'POST' && path === '/api/ai/config') {
+      const body = await readJson(req);
+      const patch: { baseUrl?: string; model?: string; apiKey?: string } = {};
+      if (typeof body.baseUrl === 'string') patch.baseUrl = body.baseUrl;
+      if (typeof body.model === 'string') patch.model = body.model;
+      if (typeof body.apiKey === 'string') patch.apiKey = body.apiKey;
+      const saved = await saveAiConfig(patch);
+      json(res, 200, publicAiConfig(saved));
+      return;
+    }
+
+    if (method === 'POST' && path === '/api/ai/chat') {
+      const body = await readJson(req);
+      const history = Array.isArray(body.messages) ? body.messages : [];
+      const chapterId = typeof body.chapterId === 'string' ? body.chapterId : undefined;
+      const system = buildSystemPrompt(project, chapterId);
+      const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+        { role: 'system', content: system },
+        ...history
+          .filter(
+            (m): m is { role: 'user' | 'assistant'; content: string } =>
+              typeof m === 'object' &&
+              m !== null &&
+              ((m as { role?: unknown }).role === 'user' ||
+                (m as { role?: unknown }).role === 'assistant') &&
+              typeof (m as { content?: unknown }).content === 'string',
+          )
+          .slice(-16)
+          .map((m) => ({ role: m.role, content: m.content })),
+      ];
+      if (messages.length === 1) throw new HttpError(400, '没有可发送的内容');
+      await streamChat(req, res, messages);
+      return;
+    }
+
+    if (method === 'POST' && path === '/api/ai/continue') {
+      const body = await readJson(req);
+      const chapterId = typeof body.chapterId === 'string' ? body.chapterId : '';
+      const instruction = typeof body.instruction === 'string' ? body.instruction.trim() : '';
+      const chapter = chapterId ? findChapter(project, chapterId) : undefined;
+      const messages = [
+        { role: 'system' as const, content: buildSystemPrompt(project, chapter?.id) },
+        {
+          role: 'user' as const,
+          content: buildContinuePrompt(chapter, instruction || undefined),
+        },
+      ];
+      await streamChat(req, res, messages);
       return;
     }
 

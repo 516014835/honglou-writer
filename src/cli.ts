@@ -14,6 +14,7 @@ import {
 import { loadProject, ProjectFileError, saveProject } from './io.js';
 import { projectStat } from './stats.js';
 import { startServer } from './server.js';
+import { loadAiConfig, publicAiConfig, saveAiConfig, aiConfigPath } from './ai.js';
 import type { Chapter, Project } from './types.js';
 
 const USAGE = `hlw — 写作辅助（honglou-writer）
@@ -37,6 +38,11 @@ const USAGE = `hlw — 写作辅助（honglou-writer）
 手机使用：
   serve         开一个网页界面，手机连同一 Wi-Fi 就能用
                 （--port 端口，默认 4321；--host 监听地址，默认 0.0.0.0）
+
+AI 设置：
+  ai            查看当前模型配置
+  ai --key sk-xxx [--model deepseek-chat] [--base https://api.deepseek.com/v1]
+                保存 API Key（存在用户目录，不进 git）
 
 选项：
   --json        输出机器可读的 JSON
@@ -225,6 +231,27 @@ async function cmdServe(
   });
 }
 
+async function cmdAi(flags: Record<string, string | undefined>, io: Io) {
+  if (flags.key) {
+    const saved = await saveAiConfig({
+      apiKey: flags.key,
+      ...(flags.model ? { model: flags.model } : {}),
+      ...(flags.base ? { baseUrl: flags.base } : {}),
+    });
+    io.out(`已保存（${saved.model} @ ${saved.baseUrl}）`);
+    io.out(`配置文件：${aiConfigPath()}`);
+    return 0;
+  }
+
+  const config = await loadAiConfig();
+  const view = publicAiConfig(config);
+  io.out(`接口：${view.baseUrl}`);
+  io.out(`模型：${view.model}`);
+  io.out(`Key ：${view.configured ? '已配置' : '没有（跑 hlw ai --key sk-xxx 或直接在网页里填）'}`);
+  io.out(`配置：${aiConfigPath()}`);
+  return 0;
+}
+
 async function cmdCheck(file: string | undefined, json: boolean, io: Io) {  const target = requireFile(file, io);
   if (!target) return 2;
   const project = await loadProject(target);
@@ -336,6 +363,9 @@ export async function main(argv: string[]): Promise<number> {
       id: { type: 'string' },
       port: { type: 'string' },
       host: { type: 'string' },
+      key: { type: 'string' },
+      model: { type: 'string' },
+      base: { type: 'string' },
       help: { type: 'boolean', short: 'h', default: false },
     },
   });
@@ -359,6 +389,9 @@ export async function main(argv: string[]): Promise<number> {
     id: values.id,
     port: values.port,
     host: values.host,
+    key: values.key,
+    model: values.model,
+    base: values.base,
   };
   const json = values.json ?? false;
 
@@ -384,6 +417,8 @@ export async function main(argv: string[]): Promise<number> {
         return await cmdOpen(file, json, io);
       case 'serve':
         return await cmdServe(file, flags, io);
+      case 'ai':
+        return await cmdAi(flags, io);
       default:
         io.err(`未知命令：${command}\n`);
         io.out(USAGE);
