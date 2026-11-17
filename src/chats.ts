@@ -104,7 +104,7 @@ export async function listConversations(
       // 坏文件跳过
     }
   }
-  return out.sort((a, b) => b.updatedAt - a.updatedAt);
+  return out.sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id));
 }
 
 export async function getConversation(

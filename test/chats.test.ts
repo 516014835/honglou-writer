@@ -41,11 +41,10 @@ describe('chats', () => {
   it('列表按更新时间倒序', async () => {
     const a = blank('c1');
     a.title = '第一条';
-    a.updatedAt = 1000;
+    await saveConversation(dir, book, a);
+    await new Promise((r) => setTimeout(r, 15));
     const b = blank('c2');
     b.title = '第二条';
-    b.updatedAt = 2000;
-    await saveConversation(dir, book, a);
     await saveConversation(dir, book, b);
 
     const list = await listConversations(dir, book);
