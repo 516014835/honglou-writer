@@ -47,12 +47,12 @@ export function renderApp(bookName: string): string {
   .grow { flex: 1 1 auto; min-width: 0; }
   .btn {
     border: 1px solid var(--line); background: #fff; color: var(--ink); font-family: inherit;
-    padding: 9px 14px; border-radius: 9px; font-size: 14px;
+    padding: 12px 16px; border-radius: 10px; font-size: 15px; min-height: 44px;
   }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   .btn.danger { color: var(--err); border-color: #e8c4c1; }
   .btn.block { display: block; width: 100%; margin-top: 10px; }
-  .btn.small { padding: 6px 10px; font-size: 13px; }
+  .btn.small { padding: 8px 12px; font-size: 13px; min-height: 38px; }
   .btn:disabled { opacity: .5; }
   textarea, input, select {
     width: 100%; font-family: inherit; font-size: 15px; color: var(--ink);
@@ -134,6 +134,29 @@ export function renderApp(bookName: string): string {
   .chat-item .grow { flex: 1 1 auto; min-width: 0; }
   .chat-item .t { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chat-item .d { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* ---------- 手机操作优化 ---------- */
+  nav button { min-height: 42px; }
+  .acts button { min-height: 38px; padding: 7px 12px; font-size: 13px; }
+  .savebar {
+    position: sticky; bottom: 0; z-index: 5; background: var(--bg);
+    display: flex; gap: 8px; padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line); margin-top: 10px;
+  }
+  .savebar .btn { flex: 1 1 auto; }
+  .savebar .btn.primary { flex: 2 1 auto; }
+  .editor textarea { min-height: 42vh; }
+  .search {
+    display: flex; gap: 8px; align-items: center; margin-bottom: 10px;
+  }
+  .search input { flex: 1 1 auto; min-height: 42px; }
+  .jump {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+    padding: 8px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent);
+    min-height: 40px;
+  }
+  .jump button { border: none; background: none; color: inherit; font-size: 13px; padding: 0; }
+  .copy-area { min-height: 40vh; font-size: 16px; line-height: 1.8; }
 </style>
 </head>
 <body>
@@ -161,7 +184,7 @@ export function renderApp(bookName: string): string {
     project: null, stats: null, diagnostics: [],
     editing: null, aiConfig: null, busy: false, showSettings: false,
     chats: [], chat: null, showHistory: false, deepThink: false, useBook: true,
-    aiChapterId: null, controller: null
+    aiChapterId: null, controller: null, chapterFilter: ''
   };
   var view = document.getElementById('view');
   var tabs = document.getElementById('tabs');
@@ -273,9 +296,21 @@ export function renderApp(bookName: string): string {
   function renderChapters() {
     if (state.editing) return renderEditor();
     var p = state.project;
-    var html = '<button class="btn primary block" data-act="new-chapter">＋ 写新的一章</button>';
-    if (!p.chapters.length) html += '<div class="empty">还没有章回，点上面那个按钮开始。</div>';
-    p.chapters.slice().sort(function (a, b) { return a.order - b.order; }).forEach(function (ch) {
+    var ordered = p.chapters.slice().sort(function (a, b) { return a.order - b.order; });
+    var filter = (state.chapterFilter || '').trim();
+    var list = ordered.filter(function (ch) {
+      if (!filter) return true;
+      return String(ch.order) === filter || (ch.title || '').indexOf(filter) >= 0;
+    });
+
+    var html = '<div class="search">' +
+      '<input id="ch-search" placeholder="搜回目或章号" value="' + esc(filter) + '">' +
+      '<button class="btn primary" data-act="new-chapter">＋ 新章</button></div>';
+
+    if (!list.length) {
+      html += '<div class="empty">' + (filter ? '没有匹配的章回。' : '还没有章回，点右上角「＋ 新章」开始。') + '</div>';
+    }
+    list.forEach(function (ch) {
       var stat = null;
       state.stats.perChapter.forEach(function (c) { if (c.id === ch.id) stat = c; });
       html += '<div class="card"><div class="row"><div class="grow">' +
@@ -288,16 +323,26 @@ export function renderApp(bookName: string): string {
 
   function renderEditor() {
     var ch = state.editing === 'new' ? null : chapterById(state.editing);
-    return '<div class="card">' +
+    var ordered = state.project.chapters.slice().sort(function (a, b) { return a.order - b.order; });
+    var idx = -1;
+    for (var i = 0; i < ordered.length; i += 1) if (ch && ordered[i].id === ch.id) idx = i;
+    var prev = idx > 0 ? ordered[idx - 1] : null;
+    var next = idx >= 0 && idx < ordered.length - 1 ? ordered[idx + 1] : null;
+
+    return '<div class="editor">' +
+      '<div class="card">' +
       '<label>回目</label>' +
       '<input id="ed-title" value="' + esc(ch ? ch.title : '') + '" placeholder="如：甄士隐梦幻识通灵">' +
       '<label>正文</label>' +
       '<textarea id="ed-body" placeholder="在这里写正文…">' + esc(ch ? ch.body : '') + '</textarea>' +
-      '<div class="row" style="margin-top:10px">' +
-      '<button class="btn primary grow" data-act="save-chapter">保存</button>' +
-      (ch ? '<button class="btn" data-act="ai-continue" data-id="' + esc(ch.id) + '">AI 接着写</button>' : '') +
-      (ch ? '<button class="btn danger" data-act="delete-chapter" data-id="' + esc(ch.id) + '">删除</button>' : '') +
+      '</div>' +
+      '<div class="savebar">' +
+      '<button class="btn primary" data-act="save-chapter">保存</button>' +
       '<button class="btn" data-act="cancel-edit">返回</button>' +
+      (prev ? '<button class="btn" data-act="goto-chapter" data-id="' + esc(prev.id) + '">上一章</button>' : '') +
+      (next ? '<button class="btn" data-act="goto-chapter" data-id="' + esc(next.id) + '">下一章</button>' : '') +
+      (ch ? '<button class="btn" data-act="ai-continue" data-id="' + esc(ch.id) + '">AI 写</button>' : '') +
+      (ch ? '<button class="btn danger" data-act="delete-chapter" data-id="' + esc(ch.id) + '">删除</button>' : '') +
       '</div></div>';
   }
 
@@ -331,7 +376,8 @@ export function renderApp(bookName: string): string {
     var chapter = state.aiChapterId ? chapterById(state.aiChapterId) : null;
     if (chapter) {
       html += '<div class="chips"><span class="chip">正在读：第 ' + chapter.order + ' 回 ' +
-        esc(chapter.title || '') + '<button data-act="ai-clear-chapter">×</button></span></div>';
+        esc(chapter.title || '') + '<button data-act="ai-clear-chapter">×</button></span>' +
+        '<button class="jump" data-act="ai-goto-chapter">回到正文 →</button></div>';
     }
 
     html += '<div class="chat" id="chat">';
@@ -371,6 +417,7 @@ export function renderApp(bookName: string): string {
     var acts = m.content && !m.pending
       ? '<div class="acts">' +
         '<button data-act="ai-copy" data-idx="' + i + '">复制</button>' +
+        '<button data-act="ai-select" data-idx="' + i + '">选取</button>' +
         '<button data-act="ai-regen" data-idx="' + i + '">重新生成</button>' +
         (m.chapterId ? '<button data-act="ai-insert" data-idx="' + i + '">插入正文</button>' : '') +
         '</div>'
@@ -492,7 +539,7 @@ export function renderApp(bookName: string): string {
   function renderHistory() {
     if (!state.showHistory) { overlay.innerHTML = ''; return; }
     var html = '<div class="overlay" data-act="close-history"><div class="sheet" data-stop="1">' +
-      '<h2><span class="grow">历史对话</span><button class="btn small" data-act="close-history">关闭</button></h2>';
+      '<h2><span class="grow">历史对话</span><button class="btn small" data-act="close-history-btn">关闭</button></h2>';
     if (!state.chats.length) html += '<div class="empty">还没有对话。</div>';
     state.chats.forEach(function (c) {
       html += '<div class="chat-item">' +
@@ -519,11 +566,62 @@ export function renderApp(bookName: string): string {
     });
     renderHistory();
     scrollChat();
+    if (state.searchFocus) {
+      state.searchFocus = false;
+      var s = document.getElementById('ch-search');
+      if (s) {
+        s.focus();
+        var n = s.value.length;
+        s.setSelectionRange(n, n);
+      }
+    }
   }
 
   function scrollChat() {
     var chat = document.getElementById('chat');
     if (chat) chat.scrollIntoView({ block: 'end' });
+  }
+
+  // ---------- 复制（局域网 http 下 clipboard API 不可用，必须有兜底） ----------
+
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    ta.style.top = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () {
+        toast('已复制');
+      }).catch(function () {
+        if (legacyCopy(text)) toast('已复制');
+        else showCopySheet(text);
+      });
+      return;
+    }
+    if (legacyCopy(text)) toast('已复制');
+    else showCopySheet(text);
+  }
+
+  function showCopySheet(text) {
+    overlay.innerHTML = '<div class="overlay" data-act="close-sheet"><div class="sheet" data-stop="1">' +
+      '<h2><span class="grow">长按选中，然后点复制</span><button class="btn small" data-act="close-sheet-btn">关闭</button></h2>' +
+      '<textarea class="copy-area" id="copy-area" readonly>' + esc(text) + '</textarea>' +
+      '<button class="btn primary block" data-act="copy-area">全选这段</button>' +
+      '</div></div>';
+    var ta = document.getElementById('copy-area');
+    if (ta) { ta.focus(); ta.select(); }
   }
 
   function patchTurn(index) {
@@ -593,6 +691,18 @@ export function renderApp(bookName: string): string {
       toast('已删除');
       render();
     }).catch(function (e) { toast(e.message, true); });
+  }
+
+  /** 保存当前正在编辑的这一章（返回 Promise） */
+  function saveCurrent() {
+    var titleEl = document.getElementById('ed-title');
+    var bodyEl = document.getElementById('ed-body');
+    if (!titleEl || !bodyEl || state.editing === 'new' || !state.editing) return Promise.resolve(null);
+    return api('/api/chapter/' + encodeURIComponent(state.editing), {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: titleEl.value.trim(), body: bodyEl.value })
+    });
   }
 
   /** 把对话历史发给模型，边收边渲染 */
@@ -702,8 +812,7 @@ export function renderApp(bookName: string): string {
     runAssistant();
   }
 
-  function continueWriting(chapterId) {
-    state.aiChapterId = chapterId || null;
+  function continueWriting(chapterId) {    state.aiChapterId = chapterId || null;
     var ch = chapterId ? chapterById(chapterId) : null;
     state.chat.messages.push({ role: 'user', content: '续写' + (ch ? '第 ' + ch.order + ' 回' : '当前章节') });
     render();
@@ -751,6 +860,17 @@ export function renderApp(bookName: string): string {
     }
     if (act === 'new-chapter') { state.editing = 'new'; render(); return; }
     if (act === 'cancel-edit') { state.editing = null; render(); return; }
+    if (act === 'goto-chapter') {
+      var gotoId = el.dataset.id;
+      if (state.editing === 'new') {
+        state.editing = gotoId; state.aiChapterId = gotoId; render(); return;
+      }
+      saveCurrent().then(function () {
+        state.editing = gotoId; state.aiChapterId = gotoId;
+        return refresh();
+      }).catch(function (e) { toast(e.message, true); });
+      return;
+    }
     if (act === 'edit') { state.editing = el.dataset.id; state.aiChapterId = el.dataset.id; render(); return; }
 
     if (act === 'save-chapter') {
@@ -842,10 +962,20 @@ export function renderApp(bookName: string): string {
     }
     if (act === 'ai-new') { newChat(); return; }
     if (act === 'ai-history') { state.showHistory = true; render(); return; }
-    if (act === 'close-history') { state.showHistory = false; render(); return; }
+    if (act === 'close-history') {
+      if (ev.target.closest('[data-stop]')) return;
+      state.showHistory = false; render(); return;
+    }
+    if (act === 'close-history-btn') {
+      state.showHistory = false; render(); return;
+    }
     if (act === 'ai-open') { openChat(el.dataset.id); return; }
     if (act === 'ai-del') { if (confirm('删掉这段对话？')) removeChat(el.dataset.id); return; }
     if (act === 'ai-clear-chapter') { state.aiChapterId = null; render(); return; }
+    if (act === 'ai-goto-chapter') {
+      if (!state.aiChapterId) return;
+      state.tab = 'chapters'; state.shelf = false; state.editing = state.aiChapterId; render(); return;
+    }
     if (act === 'ai-continue') {
       state.tab = 'ai'; state.shelf = false; state.showSettings = false; state.editing = null;
       ensureChat().then(function () { continueWriting(el.dataset.id); }).catch(function (e) { toast(e.message, true); });
@@ -854,9 +984,27 @@ export function renderApp(bookName: string): string {
     if (act === 'ai-regen') { regenerate(Number(el.dataset.idx)); return; }
     if (act === 'ai-copy') {
       var m = state.chat.messages[Number(el.dataset.idx)];
-      if (!m) return;
-      if (navigator.clipboard) navigator.clipboard.writeText(m.content).then(function () { toast('已复制'); });
-      else toast('这个浏览器不支持自动复制', true);
+      if (m) copyText(m.content);
+      return;
+    }
+    if (act === 'ai-select') {
+      var ms = state.chat.messages[Number(el.dataset.idx)];
+      if (ms) showCopySheet(ms.content);
+      return;
+    }
+    if (act === 'copy-area') {
+      var ca = document.getElementById('copy-area');
+      if (ca) { ca.focus(); ca.select(); }
+      toast('已全选，长按选「复制」');
+      return;
+    }
+    if (act === 'close-sheet') {
+      if (ev.target.closest('[data-stop]')) return;
+      overlay.innerHTML = '';
+      return;
+    }
+    if (act === 'close-sheet-btn') {
+      overlay.innerHTML = '';
       return;
     }
     if (act === 'ai-insert') {
@@ -875,6 +1023,23 @@ export function renderApp(bookName: string): string {
       }).catch(function (e) { toast(e.message, true); });
       return;
     }
+  });
+
+  document.addEventListener('input', function (ev) {
+    var t = ev.target;
+    if (!t || t.id !== 'ch-search') return;
+    state.chapterFilter = t.value;
+    state.searchFocus = true;
+    render();
+  });
+
+  // 键盘弹起时把输入框滚到可见区域
+  document.addEventListener('focusin', function (ev) {
+    var t = ev.target;
+    if (!t || (t.tagName !== 'TEXTAREA' && t.tagName !== 'INPUT')) return;
+    setTimeout(function () {
+      try { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { t.scrollIntoView(); }
+    }, 280);
   });
 
   document.addEventListener('keydown', function (ev) {
