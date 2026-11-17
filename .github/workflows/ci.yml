@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - run: npm run build
+
+      - name: 冒烟测试 CLI
+        run: |
+          node dist/cli.js init /tmp/demo.json --name 红楼梦
+          node dist/cli.js add /tmp/demo.json --title "甄士隐梦幻识通灵" --body "此开卷第一回也。"
+          node dist/cli.js check /tmp/demo.json
+          node dist/cli.js stats /tmp/demo.json
