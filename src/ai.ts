@@ -147,6 +147,15 @@ export interface ChatMessage {
   content: string;
 }
 
+/** 不注入全书内容时用的轻量提示词（省 token） */
+export function buildLitePrompt(project: Project): string {
+  return [
+    '你是一位资深的中文小说写作助手。',
+    `现在在帮作者写《${project.name}》，全书 ${project.chapters.length} 章、${project.characters.length} 个人物。`,
+    '回答要具体、可执行，不要泛泛而谈；涉及正文时直接给小说文字。',
+  ].join('\n');
+}
+
 /** 拼出「接着写」的那条用户指令 */
 export function buildContinuePrompt(chapter: Chapter | undefined, instruction?: string): string {
   const where = chapter ? `第${chapter.order}回${chapter.title ? `「${chapter.title}」` : ''}` : '这一章';
@@ -180,7 +189,7 @@ export class AiError extends Error {
 export async function requestCompletion(
   config: AiConfig,
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-  options: { maxTokens?: number; temperature?: number; signal?: AbortSignal } = {},
+  options: { maxTokens?: number; temperature?: number; signal?: AbortSignal; model?: string } = {},
 ): Promise<Response> {
   if (!config.apiKey) throw new AiError('还没有配置 API Key');
 
@@ -194,7 +203,7 @@ export async function requestCompletion(
         authorization: `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify({
-        model: config.model,
+        model: options.model ?? config.model,
         messages,
         stream: true,
         temperature: options.temperature ?? 1,

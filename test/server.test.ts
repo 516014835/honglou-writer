@@ -214,4 +214,36 @@ describe('startServer', () => {
     };
     expect(data.books.map((b) => b.file)).not.toContain('config.json');
   });
+
+  it('对话能建、能存、能列、能删', async () => {
+    const created = await fetch(`${base()}/api/chats`, { method: 'POST' });
+    expect(created.status).toBe(201);
+    const { chat } = (await created.json()) as { chat: { id: string; title: string } };
+    expect(chat.title).toBe('新对话');
+
+    const saved = await fetch(`${base()}/api/chats/${chat.id}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: '帮我写个开篇' }] }),
+    });
+    expect(saved.status).toBe(200);
+    const savedBody = (await saved.json()) as { chat: { title: string; messages: unknown[] } };
+    expect(savedBody.chat.title).toBe('帮我写个开篇');
+    expect(savedBody.chat.messages).toHaveLength(1);
+
+    const list = (await (await fetch(`${base()}/api/chats`)).json()) as {
+      chats: Array<{ id: string; count: number }>;
+    };
+    expect(list.chats).toHaveLength(1);
+    expect(list.chats[0]?.count).toBe(1);
+
+    await fetch(`${base()}/api/chats/${chat.id}`, { method: 'DELETE' });
+    const after = (await (await fetch(`${base()}/api/chats`)).json()) as { chats: unknown[] };
+    expect(after.chats).toHaveLength(0);
+  });
+
+  it('不存在的对话返回 404', async () => {
+    const res = await fetch(`${base()}/api/chats/nosuchid`);
+    expect(res.status).toBe(404);
+  });
 });

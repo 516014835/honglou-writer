@@ -52,6 +52,7 @@ export function renderApp(bookName: string): string {
   .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   .btn.danger { color: var(--err); border-color: #e8c4c1; }
   .btn.block { display: block; width: 100%; margin-top: 10px; }
+  .btn.small { padding: 6px 10px; font-size: 13px; }
   .btn:disabled { opacity: .5; }
   textarea, input, select {
     width: 100%; font-family: inherit; font-size: 15px; color: var(--ink);
@@ -69,20 +70,70 @@ export function renderApp(bookName: string): string {
   .toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
     background: #2b211c; color: #fff; padding: 10px 18px; border-radius: 999px;
-    font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 50;
+    font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 60;
   }
   .toast.show { opacity: 1; }
-  .chat { display: flex; flex-direction: column; gap: 10px; padding-bottom: 8px; }
-  .bubble { padding: 11px 13px; border-radius: 12px; white-space: pre-wrap; word-break: break-word; font-size: 15px; line-height: 1.8; }
-  .bubble.user { background: var(--accent-soft); align-self: flex-end; max-width: 90%; }
-  .bubble.assistant { background: #fff; border: 1px solid var(--line); align-self: stretch; }
-  .bubble.pending { color: var(--muted); font-style: italic; }
-  .bubble .acts { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ---------- 对话 ---------- */
+  .ai-bar { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 10px; }
+  .ai-bar button {
+    flex: 0 0 auto; font-size: 13px; padding: 7px 12px; border-radius: 999px;
+    border: 1px solid var(--line); background: #fff; color: var(--muted); font-family: inherit;
+  }
+  .ai-bar button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .chat { display: flex; flex-direction: column; gap: 14px; padding-bottom: 10px; }
+  .turn { display: flex; flex-direction: column; gap: 6px; }
+  .turn.user { align-items: flex-end; }
+  .bubble {
+    padding: 11px 14px; border-radius: 14px; font-size: 15px; line-height: 1.85;
+    max-width: 100%; word-break: break-word;
+  }
+  .bubble.user { background: var(--accent-soft); max-width: 92%; white-space: pre-wrap; }
+  .bubble.assistant { background: #fff; border: 1px solid var(--line); }
+  .bubble.pending { color: var(--muted); }
+  .bubble .md p { margin: 0 0 10px; }
+  .bubble .md p:last-child { margin-bottom: 0; }
+  .bubble .md h1, .bubble .md h2, .bubble .md h3 { font-size: 15px; margin: 14px 0 6px; }
+  .bubble .md ul, .bubble .md ol { margin: 6px 0 10px; padding-left: 22px; }
+  .bubble .md li { margin: 3px 0; }
+  .bubble .md blockquote {
+    margin: 8px 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--line); color: #5b4f45;
+  }
+  .bubble .md code { background: #f3ece2; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  .bubble .md pre {
+    background: #2b211c; color: #f6efe6; padding: 12px; border-radius: 8px;
+    overflow-x: auto; font-size: 13px; margin: 8px 0;
+  }
+  .bubble .md pre code { background: none; color: inherit; padding: 0; }
+  .bubble .md hr { border: none; border-top: 1px solid var(--line); margin: 12px 0; }
+  .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .acts button {
+    font-size: 12px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line);
+    background: #fff; color: var(--muted); font-family: inherit;
+  }
+  .think { border: 1px dashed var(--line); border-radius: 10px; padding: 8px 12px; background: #fbf7f1; font-size: 13px; color: var(--muted); }
+  .think summary { cursor: pointer; font-size: 13px; color: var(--accent); }
+  .think .body { margin-top: 8px; white-space: pre-wrap; line-height: 1.7; }
+  .cursor::after { content: '▍'; animation: blink 1s steps(2) infinite; color: var(--accent); }
+  @keyframes blink { 50% { opacity: 0; } }
   .composer { position: sticky; bottom: 0; background: var(--bg); padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); }
-  .composer textarea { min-height: 84px; }
-  .quick { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; }
-  .quick button { flex: 0 0 auto; font-size: 13px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: #fff; color: var(--muted); font-family: inherit; }
-  .hidden { display: none !important; }
+  .composer textarea { min-height: 64px; max-height: 40vh; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+  .chip button { border: none; background: none; color: inherit; font-size: 12px; cursor: pointer; padding: 0 0 0 4px; }
+
+  /* ---------- 历史对话抽屉 ---------- */
+  .overlay { position: fixed; inset: 0; background: rgba(20,14,10,.42); z-index: 40; display: flex; align-items: flex-end; }
+  .sheet {
+    background: var(--bg); width: 100%; max-height: 78vh; border-radius: 16px 16px 0 0;
+    padding: 14px 14px calc(16px + env(safe-area-inset-bottom)); overflow-y: auto;
+  }
+  .sheet h2 { margin: 0 0 10px; font-size: 15px; display: flex; align-items: center; }
+  .sheet h2 .grow { flex: 1 1 auto; }
+  .chat-item { display: flex; align-items: center; gap: 10px; padding: 12px; border-bottom: 1px solid var(--line); }
+  .chat-item .grow { flex: 1 1 auto; min-width: 0; }
+  .chat-item .t { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-item .d { font-size: 11px; color: var(--muted); margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -101,16 +152,20 @@ export function renderApp(bookName: string): string {
   <button data-act="tab" data-tab="check">体检</button>
 </nav>
 <main id="view"></main>
+<div id="overlay"></div>
 <div class="toast" id="toast"></div>
 <script>
 (function () {
   var state = {
     book: null, books: [], shelf: false, tab: 'chapters',
     project: null, stats: null, diagnostics: [],
-    editing: null, aiConfig: null, chat: [], busy: false, showSettings: false, aiChapterId: null
+    editing: null, aiConfig: null, busy: false, showSettings: false,
+    chats: [], chat: null, showHistory: false, deepThink: false, useBook: true,
+    aiChapterId: null, controller: null
   };
   var view = document.getElementById('view');
   var tabs = document.getElementById('tabs');
+  var overlay = document.getElementById('overlay');
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -141,14 +196,26 @@ export function renderApp(bookName: string): string {
     });
   }
 
+  function ago(ts) {
+    var diff = Date.now() - ts;
+    if (diff < 60000) return '刚刚';
+    if (diff < 3600000) return Math.floor(diff / 60000) + ' 分钟前';
+    if (diff < 86400000) return Math.floor(diff / 3600000) + ' 小时前';
+    var d = new Date(ts);
+    return (d.getMonth() + 1) + '月' + d.getDate() + '日';
+  }
+
+  // ---------- 数据加载 ----------
+
   function loadBooks() {
     return api('/api/books').then(function (d) {
       state.books = d.books;
       var saved = null;
-      try { saved = localStorage.getItem('hlw-book'); } catch (e) { saved = null; }
+      try { saved = localStorage.getItem('hlw-book'); } catch (e) {}
       var has = null;
       state.books.forEach(function (b) { if (b.file === saved) has = b.file; });
       if (!has) has = state.books.length ? state.books[0].file : null;
+      if (has !== state.book) { state.chat = null; state.chats = []; }
       state.book = has;
       if (state.book) { try { localStorage.setItem('hlw-book', state.book); } catch (e) {} }
       state.shelf = !state.books.length;
@@ -183,10 +250,7 @@ export function renderApp(bookName: string): string {
   // ---------- 书架 ----------
 
   function renderShelf() {
-    var html = '';
-    if (!state.books.length) {
-      html += '<div class="empty">书架还空着，先建一本。</div>';
-    }
+    var html = state.books.length ? '' : '<div class="empty">书架还空着，先建一本。</div>';
     state.books.forEach(function (b) {
       var cur = b.file === state.book;
       html += '<div class="card"><div class="row"><div class="grow">' +
@@ -200,11 +264,11 @@ export function renderApp(bookName: string): string {
       '<label>书名</label><input id="nb-name" placeholder="比如：青瓦台记事">' +
       '<label>作者（可不填）</label><input id="nb-author" placeholder="你的名字">' +
       '<button class="btn primary block" data-act="create-book">新建</button>' +
-      '<div class="meta" style="margin-top:8px">新故事会是独立的一个 .json 文件，和原来的互不影响。</div></div>';
+      '<div class="meta" style="margin-top:8px">新故事是独立的一个 .json，和原来的互不影响。</div></div>';
     return html;
   }
 
-  // ---------- 书内各页 ----------
+  // ---------- 章回 ----------
 
   function renderChapters() {
     if (state.editing) return renderEditor();
@@ -237,6 +301,8 @@ export function renderApp(bookName: string): string {
       '</div></div>';
   }
 
+  // ---------- AI ----------
+
   function renderAiSetup() {
     var cfg = state.aiConfig || { baseUrl: '', model: '' };
     return '<div class="card"><h2>先配一下模型</h2>' +
@@ -249,42 +315,136 @@ export function renderApp(bookName: string): string {
 
   function renderAi() {
     if (state.showSettings || !state.aiConfig || !state.aiConfig.configured) return renderAiSetup();
-    var html = '<div class="chat" id="chat">';
-    if (!state.chat.length) {
-      html += '<div class="empty">问它情节、让它接着写、让它挑毛病都行。<br>它读过这本书的人物、伏笔和最近几章。</div>';
-    }
-    state.chat.forEach(function (m, i) { html += bubbleHtml(m, i); });
-    html += '</div>';
-    html += '<div class="composer">' +
-      '<div class="quick">' +
-      '<button data-act="ai-quick" data-q="续写">接着写下去</button>' +
-      '<button data-act="ai-quick" data-q="接下来可以怎么发展？给三个方向，每个说清楚怎么落地。">三个情节走向</button>' +
-      '<button data-act="ai-quick" data-q="帮我看看最近这几章有没有前后矛盾或者人物性格不一致的地方。">挑毛病</button>' +
+
+    var html = '<div class="ai-bar">' +
+      '<button data-act="ai-new">＋ 新对话</button>' +
+      '<button data-act="ai-history">历史 ' + (state.chats.length || '') + '</button>' +
+      '<button class="' + (state.deepThink ? 'on' : '') + '" data-act="ai-think">深度思考</button>' +
+      '<button class="' + (state.useBook ? 'on' : '') + '" data-act="ai-usebook">引用本书</button>' +
       '<button data-act="ai-settings">设置</button>' +
+      '</div>';
+
+    if (!state.chat) {
+      return html + '<div class="empty">正在准备对话…</div>';
+    }
+
+    var chapter = state.aiChapterId ? chapterById(state.aiChapterId) : null;
+    if (chapter) {
+      html += '<div class="chips"><span class="chip">正在读：第 ' + chapter.order + ' 回 ' +
+        esc(chapter.title || '') + '<button data-act="ai-clear-chapter">×</button></span></div>';
+    }
+
+    html += '<div class="chat" id="chat">';
+    if (!state.chat.messages.length) {
+      html += '<div class="empty">想聊什么？情节卡住了、人物写不下去了、想让它接着写一段，都可以。<br>' +
+        (state.useBook ? '它会读这本书的人物、伏笔和最近几章。' : '当前没引用本书内容，答案会比较泛。') + '</div>';
+    }
+    state.chat.messages.forEach(function (m, i) { html += turnHtml(m, i); });
+    html += '</div>';
+
+    html += '<div class="composer">' +
+      '<div class="chips">' +
+      '<span class="chip" data-act="ai-quick" data-q="接下来可以怎么发展？给三个方向，每个说清楚怎么落地。">三个走向</span>' +
+      '<span class="chip" data-act="ai-quick" data-q="帮我看看这几章有没有前后矛盾、人物称呼不一致的地方。">挑毛病</span>' +
+      '<span class="chip" data-act="ai-quick" data-q="用一句话概括这一章写了什么。">一句话概括</span>' +
       '</div>' +
-      '<textarea id="ai-input" placeholder="说你想怎么写，或者直接发个题目…"></textarea>' +
-      '<button class="btn primary block" data-act="ai-send">发送</button>' +
+      '<textarea id="ai-input" placeholder="' + (state.busy ? '正在生成…' : '问它，或者让它写…') + '"></textarea>' +
+      (state.busy
+        ? '<button class="btn block" data-act="ai-stop">停止生成</button>'
+        : '<button class="btn primary block" data-act="ai-send">发送</button>') +
       '</div>';
     return html;
   }
 
-  function bubbleHtml(m, i) {
-    var cls = 'bubble ' + m.role + (m.pending ? ' pending' : '');
-    var acts = '';
-    if (m.role === 'assistant' && !m.pending && m.content) {
-      acts = '<div class="acts">' +
-        (m.chapterId ? '<button class="btn" data-act="ai-insert" data-idx="' + i + '">插入到正文</button>' : '') +
-        '<button class="btn" data-act="ai-copy" data-idx="' + i + '">复制</button>' +
-        '</div>';
+  function turnHtml(m, i) {
+    if (m.role === 'user') {
+      return '<div class="turn user"><div class="bubble user">' + esc(m.content) + '</div></div>';
     }
-    return '<div class="' + cls + '" id="bubble-' + i + '">' +
-      (m.content ? esc(m.content) : '正在想…') + acts + '</div>';
+    var thinking = '';
+    if (m.reasoning) {
+      thinking = '<details class="think"' + (m.reasoningOpen ? ' open' : '') + '><summary>思考过程</summary>' +
+        '<div class="body">' + esc(m.reasoning) + '</div></details>';
+    }
+    var body = m.content
+      ? '<div class="md">' + renderMd(m.content) + '</div>'
+      : '<span class="pending-text">正在思考…</span>';
+    var acts = m.content && !m.pending
+      ? '<div class="acts">' +
+        '<button data-act="ai-copy" data-idx="' + i + '">复制</button>' +
+        '<button data-act="ai-regen" data-idx="' + i + '">重新生成</button>' +
+        (m.chapterId ? '<button data-act="ai-insert" data-idx="' + i + '">插入正文</button>' : '') +
+        '</div>'
+      : '';
+    return '<div class="turn"><div class="bubble assistant' + (m.content ? '' : ' pending') + '" id="turn-' + i + '">' +
+      thinking + body + (acts ? '<div style="margin-top:10px">' + acts + '</div>' : '') + '</div></div>';
   }
+
+  // ---------- markdown ----------
+
+  function inline(s) {
+    var t = esc(s);
+    t = t.replace(/\`([^\`]+)\`/g, '<code>$1</code>');
+    t = t.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+    t = t.replace(/(^|[^*])\\*([^*\\n]+)\\*/g, '$1<em>$2</em>');
+    t = t.replace(/\\[([^\\]]+)\\]\\((https?:[^)]+)\\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+    return t;
+  }
+
+  function renderBlocks(text) {
+    var blocks = text.split(/\\n{2,}/);
+    var out = '';
+    blocks.forEach(function (block) {
+      if (!block.trim()) return;
+      var lines = block.split('\\n');
+      if (/^#/.test(lines[0])) {
+        var level = Math.min(3, (lines[0].match(/^#+/) || ['#'])[0].length);
+        out += '<h' + level + '>' + inline(lines[0].replace(/^#+\\s*/, '')) + '</h' + level + '>';
+        var rest = lines.slice(1).join('\\n');
+        if (rest.trim()) out += renderBlocks(rest);
+        return;
+      }
+      if (lines.every(function (l) { return /^\\s*[-*]\\s+/.test(l) || !l.trim(); })) {
+        out += '<ul>' + lines.filter(function (l) { return l.trim(); }).map(function (l) {
+          return '<li>' + inline(l.replace(/^\\s*[-*]\\s+/, '')) + '</li>';
+        }).join('') + '</ul>';
+        return;
+      }
+      if (lines.every(function (l) { return /^\\s*\\d+[.、)]\\s+/.test(l) || !l.trim(); })) {
+        out += '<ol>' + lines.filter(function (l) { return l.trim(); }).map(function (l) {
+          return '<li>' + inline(l.replace(/^\\s*\\d+[.、)]\\s+/, '')) + '</li>';
+        }).join('') + '</ol>';
+        return;
+      }
+      if (lines.every(function (l) { return /^&gt;\\s?/.test(l) || !l.trim(); })) {
+        out += '<blockquote>' + lines.filter(function (l) { return l.trim(); }).map(function (l) {
+          return inline(l.replace(/^&gt;\\s?/, ''));
+        }).join('<br>') + '</blockquote>';
+        return;
+      }
+      if (/^-{3,}$/.test(block.trim())) { out += '<hr>'; return; }
+      out += '<p>' + lines.map(inline).join('<br>') + '</p>';
+    });
+    return out;
+  }
+
+  function renderMd(src) {
+    var parts = String(src || '').split('\`\`\`');
+    var out = '';
+    for (var i = 0; i < parts.length; i += 1) {
+      if (i % 2 === 1) {
+        out += '<pre><code>' + esc(parts[i].replace(/^[a-zA-Z0-9-]*\\n/, '')) + '</code></pre>';
+      } else {
+        out += renderBlocks(parts[i]);
+      }
+    }
+    return out;
+  }
+
+  // ---------- 人物 / 伏笔 / 体检 ----------
 
   function renderChars() {
     var p = state.project;
-    var html = '';
-    if (!p.characters.length) html += '<div class="empty">还没有人物卡。</div>';
+    var html = p.characters.length ? '' : '<div class="empty">还没有人物卡。</div>';
     p.characters.forEach(function (c) {
       var debut = '';
       p.chapters.forEach(function (ch) { if (ch.id === c.firstChapterId) debut = '第 ' + ch.order + ' 回出场'; });
@@ -303,8 +463,7 @@ export function renderApp(bookName: string): string {
 
   function renderForeshadows() {
     var p = state.project;
-    var html = '';
-    if (!p.foreshadows.length) html += '<div class="empty">还没有伏笔。</div>';
+    var html = p.foreshadows.length ? '' : '<div class="empty">还没有伏笔。</div>';
     p.foreshadows.forEach(function (f) {
       var at = '';
       p.chapters.forEach(function (ch) { if (ch.id === f.plantedChapterId) at = '第 ' + ch.order + ' 回埋下'; });
@@ -330,6 +489,23 @@ export function renderApp(bookName: string): string {
     }).join('');
   }
 
+  function renderHistory() {
+    if (!state.showHistory) { overlay.innerHTML = ''; return; }
+    var html = '<div class="overlay" data-act="close-history"><div class="sheet" data-stop="1">' +
+      '<h2><span class="grow">历史对话</span><button class="btn small" data-act="close-history">关闭</button></h2>';
+    if (!state.chats.length) html += '<div class="empty">还没有对话。</div>';
+    state.chats.forEach(function (c) {
+      html += '<div class="chat-item">' +
+        '<div class="grow" data-act="ai-open" data-id="' + esc(c.id) + '">' +
+        '<div class="t">' + esc(c.title) + '</div>' +
+        '<div class="d">' + ago(c.updatedAt) + ' · ' + c.count + ' 条</div></div>' +
+        '<button class="btn small danger" data-act="ai-del" data-id="' + esc(c.id) + '">删</button>' +
+        '</div>';
+    });
+    html += '</div></div>';
+    overlay.innerHTML = html;
+  }
+
   function render() {
     if (state.shelf || !state.book || !state.project) {
       view.innerHTML = state.books.length || state.shelf ? renderShelf() : '<div class="empty">加载中…</div>';
@@ -341,17 +517,108 @@ export function renderApp(bookName: string): string {
     Array.prototype.forEach.call(tabs.children, function (b) {
       b.className = b.dataset.tab === state.tab && !state.shelf ? 'on' : '';
     });
+    renderHistory();
+    scrollChat();
+  }
+
+  function scrollChat() {
     var chat = document.getElementById('chat');
     if (chat) chat.scrollIntoView({ block: 'end' });
   }
 
-  // ---------- 流式对话 ----------
+  function patchTurn(index) {
+    var el = document.getElementById('turn-' + index);
+    if (!el) { render(); return; }
+    var m = state.chat.messages[index];
+    if (!m) return;
+    var wrap = el.parentElement;
+    if (wrap) wrap.outerHTML = turnHtml(m, index);
+  }
 
-  function streamPost(path, body, onDelta) {
-    return fetch(withBook(path), {
+  // ---------- 对话流程 ----------
+
+  function ensureChat() {
+    if (state.chat) return Promise.resolve(state.chat);
+    return api('/api/chats').then(function (d) {
+      state.chats = d.chats;
+      if (state.chats.length) {
+        return api('/api/chats/' + encodeURIComponent(state.chats[0].id)).then(function (r) {
+          state.chat = r.chat;
+          return state.chat;
+        });
+      }
+      return api('/api/chats', { method: 'POST' }).then(function (r) {
+        state.chat = r.chat;
+        state.chats.unshift({ id: r.chat.id, title: r.chat.title, updatedAt: r.chat.updatedAt, count: 0 });
+        return state.chat;
+      });
+    });
+  }
+
+  function persistChat() {
+    if (!state.chat || !state.chat.messages.length) return Promise.resolve();
+    return api('/api/chats/' + encodeURIComponent(state.chat.id), {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messages: state.chat.messages })
+    }).then(function (r) {
+      state.chat = r.chat;
+      state.chats = state.chats.map(function (c) {
+        return c.id === r.chat.id ? { id: r.chat.id, title: r.chat.title, updatedAt: r.chat.updatedAt, count: r.chat.messages.length } : c;
+      });
+    }).catch(function () {});
+  }
+
+  function newChat() {
+    api('/api/chats', { method: 'POST' }).then(function (r) {
+      state.chat = r.chat;
+      state.chats.unshift({ id: r.chat.id, title: r.chat.title, updatedAt: r.chat.updatedAt, count: 0 });
+      state.showHistory = false;
+      render();
+    }).catch(function (e) { toast(e.message, true); });
+  }
+
+  function openChat(id) {
+    api('/api/chats/' + encodeURIComponent(id)).then(function (r) {
+      state.chat = r.chat;
+      state.showHistory = false;
+      render();
+    }).catch(function (e) { toast(e.message, true); });
+  }
+
+  function removeChat(id) {
+    api('/api/chats/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
+      state.chats = state.chats.filter(function (c) { return c.id !== id; });
+      if (state.chat && state.chat.id === id) state.chat = null;
+      toast('已删除');
+      render();
+    }).catch(function (e) { toast(e.message, true); });
+  }
+
+  /** 把对话历史发给模型，边收边渲染 */
+  function runAssistant() {
+    var chat = state.chat;
+    var bubble = { role: 'assistant', content: '', reasoning: '', pending: true, chapterId: state.aiChapterId || null };
+    chat.messages.push(bubble);
+    var index = chat.messages.length - 1;
+    state.busy = true;
+    state.controller = new AbortController();
+    render();
+
+    var payloadMessages = chat.messages
+      .filter(function (m) { return !m.pending; })
+      .map(function (m) { return { role: m.role, content: m.content }; });
+
+    fetch(withBook('/api/ai/chat'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body)
+      signal: state.controller.signal,
+      body: JSON.stringify({
+        messages: payloadMessages,
+        chapterId: state.aiChapterId || null,
+        useBook: state.useBook,
+        deepThink: state.deepThink
+      })
     }).then(function (res) {
       if (!res.ok) {
         return res.json().catch(function () { return {}; }).then(function (d) {
@@ -361,6 +628,7 @@ export function renderApp(bookName: string): string {
       var reader = res.body.getReader();
       var dec = new TextDecoder('utf-8');
       var buffer = '';
+      var last = 0;
       function pump() {
         return reader.read().then(function (r) {
           if (r.done) return;
@@ -376,67 +644,70 @@ export function renderApp(bookName: string): string {
               try {
                 var parsed = JSON.parse(raw);
                 var choice = parsed.choices && parsed.choices[0];
-                var delta = choice && choice.delta && choice.delta.content;
-                if (delta) onDelta(delta);
-              } catch (e) { /* 忽略心跳和坏包 */ }
+                var delta = choice && choice.delta;
+                if (!delta) return;
+                if (delta.reasoning_content) { bubble.reasoning += delta.reasoning_content; }
+                if (delta.content) { bubble.pending = false; bubble.content += delta.content; }
+                var now = Date.now();
+                if (now - last > 90) {
+                  last = now;
+                  bubble.reasoningOpen = !bubble.content;
+                  patchTurn(index);
+                }
+              } catch (e) { /* 心跳包 */ }
             });
           }
           return pump();
         });
       }
       return pump();
-    });
-  }
-
-  function runChat(path, payload, chapterId) {
-    if (state.busy) { toast('等它写完这一句', true); return; }
-    state.busy = true;
-    var bubble = { role: 'assistant', content: '', pending: true, chapterId: chapterId || null };
-    state.chat.push(bubble);
-    var index = state.chat.length - 1;
-    render();
-
-    streamPost(path, payload, function (delta) {
-      if (bubble.pending) {
-        bubble.pending = false;
-        var node = document.getElementById('bubble-' + index);
-        if (node) node.className = 'bubble assistant';
-      }
-      bubble.content += delta;
-      var el = document.getElementById('bubble-' + index);
-      if (el) el.textContent = bubble.content;
     }).then(function () {
       state.busy = false;
-      if (bubble.pending) bubble.content = '（模型没有返回内容）';
+      state.controller = null;
+      if (!bubble.content && !bubble.reasoning) bubble.content = '（模型没有返回内容）';
       bubble.pending = false;
       render();
+      return persistChat();
     }).catch(function (e) {
       state.busy = false;
+      state.controller = null;
       bubble.pending = false;
-      bubble.content = '出错了：' + e.message;
+      if (e && e.name === 'AbortError') {
+        bubble.content = bubble.content || '（已停止）';
+      } else {
+        bubble.content = bubble.content || ('出错了：' + (e && e.message ? e.message : '未知错误'));
+        toast(e && e.message ? e.message : '出错了', true);
+      }
       render();
-      toast(e.message, true);
+      return persistChat();
     });
   }
 
-  function sendChat() {
-    var input = document.getElementById('ai-input');
-    var text = input ? input.value.trim() : '';
-    if (!text) { toast('先说点什么', true); return; }
-    state.chat.push({ role: 'user', content: text });
+  function sendText(text) {
+    if (state.busy) { toast('等它写完这一句', true); return; }
+    var content = (text || '').trim();
+    if (!content) { toast('先说点什么', true); return; }
+    state.chat.messages.push({ role: 'user', content: content });
     render();
-    var messages = state.chat
-      .filter(function (m) { return !m.pending; })
-      .map(function (m) { return { role: m.role, content: m.content }; });
-    runChat('/api/ai/chat', { messages: messages, chapterId: state.aiChapterId || null }, null);
+    runAssistant();
+  }
+
+  function regenerate(index) {
+    if (state.busy) return;
+    var msg = state.chat.messages[index];
+    if (!msg || msg.role !== 'assistant') return;
+    state.chat.messages.splice(index, 1);
+    state.aiChapterId = msg.chapterId || state.aiChapterId;
+    render();
+    runAssistant();
   }
 
   function continueWriting(chapterId) {
     state.aiChapterId = chapterId || null;
     var ch = chapterId ? chapterById(chapterId) : null;
-    state.chat.push({ role: 'user', content: '（让它接着写' + (ch ? '第 ' + ch.order + ' 回' : '') + '）' });
+    state.chat.messages.push({ role: 'user', content: '续写' + (ch ? '第 ' + ch.order + ' 回' : '当前章节') });
     render();
-    runChat('/api/ai/continue', { chapterId: chapterId || '', instruction: '' }, chapterId || null);
+    runAssistant();
   }
 
   // ---------- 交互 ----------
@@ -450,7 +721,7 @@ export function renderApp(bookName: string): string {
     if (act === 'open-book') {
       state.book = el.dataset.file;
       try { localStorage.setItem('hlw-book', state.book); } catch (e) {}
-      state.shelf = false; state.tab = 'chapters'; state.chat = []; state.editing = null;
+      state.shelf = false; state.tab = 'chapters'; state.chat = null; state.chats = []; state.editing = null;
       refresh(); return;
     }
     if (act === 'create-book') {
@@ -463,7 +734,7 @@ export function renderApp(bookName: string): string {
       }).then(function (d) {
         state.book = d.file;
         try { localStorage.setItem('hlw-book', d.file); } catch (e) {}
-        state.shelf = false; state.tab = 'chapters';
+        state.shelf = false; state.tab = 'chapters'; state.chat = null; state.chats = [];
         toast('已建好《' + d.name + '》');
         return refresh();
       }).catch(function (e) { toast(e.message, true); });
@@ -471,7 +742,12 @@ export function renderApp(bookName: string): string {
     }
 
     if (act === 'tab') {
-      state.tab = el.dataset.tab; state.shelf = false; state.editing = null; state.showSettings = false; render(); return;
+      state.tab = el.dataset.tab; state.shelf = false; state.editing = null;
+      state.showSettings = false; state.showHistory = false;
+      if (state.tab === 'ai') {
+        ensureChat().then(function () { render(); }).catch(function (e) { toast(e.message, true); });
+      }
+      render(); return;
     }
     if (act === 'new-chapter') { state.editing = 'new'; render(); return; }
     if (act === 'cancel-edit') { state.editing = null; render(); return; }
@@ -544,21 +820,50 @@ export function renderApp(bookName: string): string {
       }).catch(function (e) { toast(e.message, true); });
       return;
     }
-    if (act === 'ai-send') { sendChat(); return; }
-    if (act === 'ai-quick') {
-      var qi = document.getElementById('ai-input');
-      if (qi) qi.value = el.dataset.q;
-      sendChat(); return;
+    if (act === 'ai-send') {
+      var input = document.getElementById('ai-input');
+      sendText(input ? input.value : '');
+      return;
     }
+    if (act === 'ai-stop') {
+      if (state.controller) state.controller.abort();
+      return;
+    }
+    if (act === 'ai-quick') { sendText(el.dataset.q); return; }
+    if (act === 'ai-think') {
+      state.deepThink = !state.deepThink;
+      try { localStorage.setItem('hlw-think', state.deepThink ? '1' : '0'); } catch (e) {}
+      render(); return;
+    }
+    if (act === 'ai-usebook') {
+      state.useBook = !state.useBook;
+      try { localStorage.setItem('hlw-usebook', state.useBook ? '1' : '0'); } catch (e) {}
+      render(); return;
+    }
+    if (act === 'ai-new') { newChat(); return; }
+    if (act === 'ai-history') { state.showHistory = true; render(); return; }
+    if (act === 'close-history') { state.showHistory = false; render(); return; }
+    if (act === 'ai-open') { openChat(el.dataset.id); return; }
+    if (act === 'ai-del') { if (confirm('删掉这段对话？')) removeChat(el.dataset.id); return; }
+    if (act === 'ai-clear-chapter') { state.aiChapterId = null; render(); return; }
     if (act === 'ai-continue') {
       state.tab = 'ai'; state.shelf = false; state.showSettings = false; state.editing = null;
-      continueWriting(el.dataset.id); return;
+      ensureChat().then(function () { continueWriting(el.dataset.id); }).catch(function (e) { toast(e.message, true); });
+      return;
+    }
+    if (act === 'ai-regen') { regenerate(Number(el.dataset.idx)); return; }
+    if (act === 'ai-copy') {
+      var m = state.chat.messages[Number(el.dataset.idx)];
+      if (!m) return;
+      if (navigator.clipboard) navigator.clipboard.writeText(m.content).then(function () { toast('已复制'); });
+      else toast('这个浏览器不支持自动复制', true);
+      return;
     }
     if (act === 'ai-insert') {
-      var msg = state.chat[Number(el.dataset.idx)];
+      var msg = state.chat.messages[Number(el.dataset.idx)];
       if (!msg) return;
       var target = msg.chapterId ? chapterById(msg.chapterId) : null;
-      if (!target) { toast('先打开一章再插入', true); return; }
+      if (!target) { toast('先在章回里打开一章，再点「AI 接着写」', true); return; }
       var nextBody = (target.body ? target.body.replace(/\\s+$/, '') + '\\n\\n' : '') + msg.content;
       api('/api/chapter/' + encodeURIComponent(target.id), {
         method: 'PUT', headers: { 'content-type': 'application/json' },
@@ -570,14 +875,22 @@ export function renderApp(bookName: string): string {
       }).catch(function (e) { toast(e.message, true); });
       return;
     }
-    if (act === 'ai-copy') {
-      var m = state.chat[Number(el.dataset.idx)];
-      if (!m) return;
-      if (navigator.clipboard) navigator.clipboard.writeText(m.content).then(function () { toast('已复制'); });
-      else toast('这个浏览器不支持自动复制', true);
-      return;
-    }
   });
+
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter') return;
+    var t = ev.target;
+    if (!t || t.id !== 'ai-input') return;
+    if (ev.shiftKey) return;
+    if (ev.isComposing) return;
+    ev.preventDefault();
+    sendText(t.value);
+  });
+
+  try {
+    state.deepThink = localStorage.getItem('hlw-think') === '1';
+    state.useBook = localStorage.getItem('hlw-usebook') !== '0';
+  } catch (e) { /* 隐私模式下忽略 */ }
 
   refresh();
   setInterval(function () { if (!state.busy) loadBooks(); }, 30000);

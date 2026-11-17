@@ -7,12 +7,23 @@ import { checkProject } from './check.js';
 import {
   AiError,
   buildContinuePrompt,
+  buildLitePrompt,
   buildSystemPrompt,
   loadAiConfig,
   publicAiConfig,
   requestCompletion,
   saveAiConfig,
 } from './ai.js';
+import {
+  deleteConversation,
+  getConversation,
+  listConversations,
+  newConversationId,
+  saveConversation,
+  titleFromMessages,
+  type ChatTurn,
+  type Conversation,
+} from './chats.js';
 import { loadProject, ProjectFileError, saveProject } from './io.js';
 import { addChapter, addCharacter, createProject, findChapter, payForeshadow, plantForeshadow } from './project.js';
 import { projectStat } from './stats.js';
@@ -214,6 +225,7 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
     req: IncomingMessage,
     res: ServerResponse,
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+    model?: string,
   ): Promise<void> {
     const config = await loadAiConfig();
     if (!config.apiKey) throw new HttpError(400, '还没配置 API Key');
@@ -223,7 +235,11 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
 
     let upstream: Response;
     try {
-      upstream = await requestCompletion(config, messages, { signal: controller.signal });
+      upstream = await requestCompletion(config, messages, {
+        signal: controller.signal,
+        ...(model ? { model } : {}),
+        ...(model && model.includes('reasoner') ? { maxTokens: 4000 } : {}),
+      });
     } catch (error) {
       if (error instanceof AiError) throw new HttpError(502, error.message);
       throw error;
@@ -422,7 +438,9 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
       const body = await readJson(req);
       const history = Array.isArray(body.messages) ? body.messages : [];
       const chapterId = typeof body.chapterId === 'string' ? body.chapterId : undefined;
-      const system = buildSystemPrompt(project, chapterId);
+      const useBook = body.useBook !== false;
+      const system = useBook ? buildSystemPrompt(project, chapterId) : buildLitePrompt(project);
+      const model = body.deepThink === true ? 'deepseek-reasoner' : undefined;
       const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
         { role: 'system', content: system },
         ...history
@@ -438,7 +456,7 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
           .map((m) => ({ role: m.role, content: m.content })),
       ];
       if (messages.length === 1) throw new HttpError(400, '没有可发送的内容');
-      await streamChat(req, res, messages);
+      await streamChat(req, res, messages, model);
       return;
     }
 
@@ -456,6 +474,71 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
       ];
       await streamChat(req, res, messages);
       return;
+    }
+
+    if (method === 'GET' && path === '/api/chats') {
+      json(res, 200, { chats: await listConversations(booksDir, file) });
+      return;
+    }
+
+    if (method === 'POST' && path === '/api/chats') {
+      const now = Date.now();
+      const conversation: Conversation = {
+        id: newConversationId(now),
+        title: '新对话',
+        createdAt: now,
+        updatedAt: now,
+        messages: [],
+      };
+      await saveConversation(booksDir, file, conversation);
+      json(res, 201, { chat: conversation });
+      return;
+    }
+
+    const chatMatch = /^\/api\/chats\/([^/]+)$/.exec(path);
+    if (chatMatch) {
+      const id = decodeURIComponent(chatMatch[1]!);
+
+      if (method === 'GET') {
+        const chat = await getConversation(booksDir, file, id);
+        if (!chat) throw new HttpError(404, '找不到这段对话');
+        json(res, 200, { chat });
+        return;
+      }
+
+      if (method === 'PUT') {
+        const body = await readJson(req);
+        const existing = await getConversation(booksDir, file, id);
+        if (!existing) throw new HttpError(404, '找不到这段对话');
+        const incoming = Array.isArray(body.messages) ? (body.messages as ChatTurn[]) : existing.messages;
+        const messages: ChatTurn[] = incoming
+          .filter(
+            (m) =>
+              (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string',
+          )
+          .map((m) => ({
+            role: m.role,
+            content: m.content,
+            ...(m.reasoning ? { reasoning: m.reasoning } : {}),
+            ...(m.chapterId ? { chapterId: m.chapterId } : {}),
+          }));
+        const autoTitle = existing.title === '新对话';
+        const title =
+          typeof body.title === 'string' && body.title.trim()
+            ? body.title.trim().slice(0, 40)
+            : autoTitle
+              ? titleFromMessages(messages)
+              : existing.title;
+        const saved = await saveConversation(booksDir, file, { ...existing, title, messages });
+        json(res, 200, { chat: saved });
+        return;
+      }
+
+      if (method === 'DELETE') {
+        await deleteConversation(booksDir, file, id);
+        json(res, 200, { ok: true });
+        return;
+      }
     }
 
     if (method === 'GET' && path === '/api/export') {
