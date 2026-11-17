@@ -14,3 +14,4 @@
 - `projectStat` 字数统计：汉字按字计、英文按词计
 - `loadProject` / `saveProject` / `parseProject`，带结构校验
 - 命令行工具 `hlw`：`init` `add` `char` `plant` `pay` `check` `stats` `chars` `open`
+- `hlw serve`：局域网网页界面，手机浏览器可写正文、管人物与伏笔

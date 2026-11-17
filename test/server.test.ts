@@ -1,0 +1,148 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { startServer, type RunningServer } from '../src/server.js';
+import { loadProject, saveProject } from '../src/io.js';
+import { addChapter, createProject } from '../src/project.js';
+
+describe('startServer', () => {
+  let dir: string;
+  let file: string;
+  let server: RunningServer;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'hlw-http-'));
+    file = join(dir, 'book.json');
+    const project = createProject('红楼梦', '曹雪芹');
+    addChapter(project, { title: '第一回', body: '满纸荒唐言，一把辛酸泪。' });
+    await saveProject(file, project);
+    server = await startServer({ file, port: 0, host: '127.0.0.1' });
+  });
+
+  afterEach(async () => {
+    await server.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const base = () => `http://127.0.0.1:${server.port}`;
+
+  it('首页返回 HTML', async () => {
+    const res = await fetch(base());
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    const body = await res.text();
+    expect(body).toContain('红楼梦');
+    expect(body).toContain('章回');
+  });
+
+  it('/api/project 返回作品、统计与体检', async () => {
+    const res = await fetch(`${base()}/api/project`);
+    const data = (await res.json()) as {
+      project: { name: string; chapters: unknown[] };
+      stats: { chapters: number; totalWords: number };
+      diagnostics: unknown[];
+    };
+    expect(data.project.name).toBe('红楼梦');
+    expect(data.stats.chapters).toBe(1);
+    expect(data.stats.totalWords).toBe(10);
+    expect(Array.isArray(data.diagnostics)).toBe(true);
+  });
+
+  it('新增章节并落盘', async () => {
+    const res = await fetch(`${base()}/api/chapter`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: '第二回', body: '贾夫人仙逝扬州城。' }),
+    });
+    expect(res.status).toBe(201);
+
+    const saved = await loadProject(file);
+    expect(saved.chapters).toHaveLength(2);
+    expect(saved.chapters[1]?.title).toBe('第二回');
+  });
+
+  it('回目和正文都空时报 400', async () => {
+    const res = await fetch(`${base()}/api/chapter`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: '', body: '' }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('修改与删除章节', async () => {
+    const id = 'ch-001';
+    const put = await fetch(`${base()}/api/chapter/${id}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ body: '改过的正文' }),
+    });
+    expect(put.status).toBe(200);
+    expect((await loadProject(file)).chapters[0]?.body).toBe('改过的正文');
+
+    const del = await fetch(`${base()}/api/chapter/${id}`, { method: 'DELETE' });
+    expect(del.status).toBe(200);
+    expect((await loadProject(file)).chapters).toHaveLength(0);
+  });
+
+  it('人物首次出场章支持用序号', async () => {
+    const res = await fetch(`${base()}/api/character`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '林黛玉', aliases: ['颦儿'], role: '贾母外孙女', debut: '1' }),
+    });
+    expect(res.status).toBe(201);
+    const saved = await loadProject(file);
+    expect(saved.characters[0]).toMatchObject({
+      name: '林黛玉',
+      aliases: ['颦儿'],
+      firstChapterId: 'ch-001',
+    });
+  });
+
+  it('埋伏笔再回收', async () => {
+    const plant = await fetch(`${base()}/api/foreshadow`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: '通灵宝玉', at: '1' }),
+    });
+    expect(plant.status).toBe(201);
+    const planted = (await plant.json()) as { foreshadow: { id: string; status: string } };
+    expect(planted.foreshadow.status).toBe('open');
+
+    const pay = await fetch(`${base()}/api/pay`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: planted.foreshadow.id, at: '1' }),
+    });
+    expect(pay.status).toBe(200);
+    expect((await loadProject(file)).foreshadows[0]?.status).toBe('paid');
+  });
+
+  it('找不到的章返回 400', async () => {
+    const res = await fetch(`${base()}/api/foreshadow`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'x', at: '99' }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('未知路径返回 404，坏 JSON 返回 400', async () => {
+    expect((await fetch(`${base()}/nope`)).status).toBe(404);
+    const bad = await fetch(`${base()}/api/chapter`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{oops',
+    });
+    expect(bad.status).toBe(400);
+  });
+
+  it('导出接口返回 JSON', async () => {
+    const res = await fetch(`${base()}/api/export`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-disposition')).toContain('attachment');
+    expect((await res.json()) as { name: string }).toMatchObject({ name: '红楼梦' });
+  });
+});

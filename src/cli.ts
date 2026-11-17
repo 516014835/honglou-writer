@@ -13,6 +13,7 @@ import {
 } from './project.js';
 import { loadProject, ProjectFileError, saveProject } from './io.js';
 import { projectStat } from './stats.js';
+import { startServer } from './server.js';
 import type { Chapter, Project } from './types.js';
 
 const USAGE = `hlw — 写作辅助（honglou-writer）
@@ -33,6 +34,10 @@ const USAGE = `hlw — 写作辅助（honglou-writer）
   chars         人物表
   open          还没回收的伏笔
 
+手机使用：
+  serve         开一个网页界面，手机连同一 Wi-Fi 就能用
+                （--port 端口，默认 4321；--host 监听地址，默认 0.0.0.0）
+
 选项：
   --json        输出机器可读的 JSON
   -h, --help    显示帮助
@@ -44,6 +49,7 @@ const USAGE = `hlw — 写作辅助（honglou-writer）
   hlw plant 红楼梦.json --title 通灵宝玉 --at 1
   hlw pay 红楼梦.json --id fs-001 --at 120
   hlw check 红楼梦.json
+  hlw serve 红楼梦.json --port 4321
 `;
 
 interface Io {
@@ -183,8 +189,43 @@ async function cmdPay(file: string | undefined, flags: Record<string, string | u
   return 0;
 }
 
-async function cmdCheck(file: string | undefined, json: boolean, io: Io) {
+async function cmdServe(
+  file: string | undefined,
+  flags: Record<string, string | undefined>,
+  io: Io,
+): Promise<number> {
   const target = requireFile(file, io);
+  if (!target) return 2;
+  const port = flags.port ? Number(flags.port) : 4321;
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    io.err(`端口不对：${String(flags.port)}`);
+    return 2;
+  }
+  const server = await startServer({
+    file: target,
+    port,
+    ...(flags.host ? { host: flags.host } : {}),
+  });
+
+  io.out(`「${target}」已开成网页：`);
+  io.out('');
+  for (const [index, url] of server.urls.entries()) {
+    io.out(`  ${index === 0 ? '本机  ' : '手机  '} ${url}`);
+  }
+  io.out('');
+  io.out('手机连同一个 Wi-Fi，浏览器打开上面的「手机」地址即可。');
+  io.out('数据仍然写在你电脑上这个 json 文件里。按 Ctrl+C 停止。');
+
+  return await new Promise<number>((resolve) => {
+    const stop = () => {
+      void server.close().then(() => resolve(0));
+    };
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
+  });
+}
+
+async function cmdCheck(file: string | undefined, json: boolean, io: Io) {  const target = requireFile(file, io);
   if (!target) return 2;
   const project = await loadProject(target);
   const diagnostics = checkProject(project);
@@ -293,6 +334,8 @@ export async function main(argv: string[]): Promise<number> {
       debut: { type: 'string' },
       at: { type: 'string' },
       id: { type: 'string' },
+      port: { type: 'string' },
+      host: { type: 'string' },
       help: { type: 'boolean', short: 'h', default: false },
     },
   });
@@ -314,6 +357,8 @@ export async function main(argv: string[]): Promise<number> {
     debut: values.debut,
     at: values.at,
     id: values.id,
+    port: values.port,
+    host: values.host,
   };
   const json = values.json ?? false;
 
@@ -337,6 +382,8 @@ export async function main(argv: string[]): Promise<number> {
         return await cmdChars(file, json, io);
       case 'open':
         return await cmdOpen(file, json, io);
+      case 'serve':
+        return await cmdServe(file, flags, io);
       default:
         io.err(`未知命令：${command}\n`);
         io.out(USAGE);
