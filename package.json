@@ -1,14 +1,14 @@
-﻿{
+{
   "name": "honglou-writer",
   "version": "0.1.0",
-  "description": "鍐欎綔杈呭姪宸ュ叿搴擄細绔犲洖銆佷汉鐗╁崱銆佹椂闂寸嚎銆佷紡绗旇拷韪紝闄勫懡浠よ宸ュ叿 hlw",
+  "description": "写作辅助工具库：章回、人物卡、时间线、伏笔追踪，附命令行工具 hlw",
   "keywords": [
     "writing",
     "novel",
     "chinese",
-    "鍐欎綔",
-    "灏忚",
-    "绾㈡ゼ姊?
+    "写作",
+    "小说",
+    "红楼梦"
   ],
   "homepage": "https://github.com/516014835/honglou-writer#readme",
   "bugs": {
