@@ -554,13 +554,36 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
     throw new HttpError(404, '页面不存在');
   }
 
-  await new Promise<void>((resolveListen, reject) => {
-    server.once('error', reject);
-    server.listen(port, host, () => resolveListen());
-  });
+  /** 端口被占（比如上次的窗口没关）时自动顺延几个 */
+  async function listenOn(startPort: number): Promise<number> {
+    const attempts = options.port === undefined ? 6 : 1;
+    for (let i = 0; i < attempts; i += 1) {
+      const candidate = startPort + i;
+      try {
+        await new Promise<void>((resolveListen, reject) => {
+          const onError = (error: NodeJS.ErrnoException) => {
+            server.removeListener('listening', onListening);
+            reject(error);
+          };
+          const onListening = () => {
+            server.removeListener('error', onError);
+            resolveListen();
+          };
+          server.once('error', onError);
+          server.once('listening', onListening);
+          server.listen(candidate, host);
+        });
+        const addr = server.address();
+        return typeof addr === 'object' && addr ? addr.port : candidate;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== 'EADDRINUSE' || i === attempts - 1) throw error;
+      }
+    }
+    throw new Error('没有可用端口');
+  }
 
-  const address = server.address();
-  const actualPort = typeof address === 'object' && address ? address.port : port;
+  const actualPort = await listenOn(port);
   const urls = [
     `http://127.0.0.1:${actualPort}`,
     ...lanAddresses().map((ip) => `http://${ip}:${actualPort}`),
