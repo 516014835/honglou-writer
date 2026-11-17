@@ -36,8 +36,9 @@ const USAGE = `hlw — 写作辅助（honglou-writer）
   open          还没回收的伏笔
 
 手机使用：
-  serve         开一个网页界面，手机连同一 Wi-Fi 就能用
-                （--port 端口，默认 4321；--host 监听地址，默认 0.0.0.0）
+  serve [作品文件.json]   开一个网页界面，手机连同一 Wi-Fi 就能用
+                （不给文件就把当前文件夹当书架，里面每本书都能切换）
+                （--port 端口，默认 4321；--dir 书架目录；--host 监听地址）
 
 AI 设置：
   ai            查看当前模型配置
@@ -200,27 +201,26 @@ async function cmdServe(
   flags: Record<string, string | undefined>,
   io: Io,
 ): Promise<number> {
-  const target = requireFile(file, io);
-  if (!target) return 2;
   const port = flags.port ? Number(flags.port) : 4321;
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     io.err(`端口不对：${String(flags.port)}`);
     return 2;
   }
   const server = await startServer({
-    file: target,
+    ...(file ? { file } : {}),
+    ...(flags.dir ? { dir: flags.dir } : {}),
     port,
     ...(flags.host ? { host: flags.host } : {}),
   });
 
-  io.out(`「${target}」已开成网页：`);
+  io.out(`书架目录：${server.dir}`);
   io.out('');
   for (const [index, url] of server.urls.entries()) {
     io.out(`  ${index === 0 ? '本机  ' : '手机  '} ${url}`);
   }
   io.out('');
   io.out('手机连同一个 Wi-Fi，浏览器打开上面的「手机」地址即可。');
-  io.out('数据仍然写在你电脑上这个 json 文件里。按 Ctrl+C 停止。');
+  io.out('页面右上角「书架」可以切换或新建故事。按 Ctrl+C 停止。');
 
   return await new Promise<number>((resolve) => {
     const stop = () => {
@@ -363,6 +363,7 @@ export async function main(argv: string[]): Promise<number> {
       id: { type: 'string' },
       port: { type: 'string' },
       host: { type: 'string' },
+      dir: { type: 'string' },
       key: { type: 'string' },
       model: { type: 'string' },
       base: { type: 'string' },
@@ -389,6 +390,7 @@ export async function main(argv: string[]): Promise<number> {
     id: values.id,
     port: values.port,
     host: values.host,
+    dir: values.dir,
     key: values.key,
     model: values.model,
     base: values.base,

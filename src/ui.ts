@@ -26,8 +26,13 @@ export function renderApp(bookName: string): string {
     position: sticky; top: 0; z-index: 10; background: var(--accent); color: #fff;
     padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
   }
-  header h1 { margin: 0; font-size: 17px; font-weight: 600; }
+  header .bar { display: flex; align-items: center; gap: 10px; }
+  header h1 { margin: 0; font-size: 17px; font-weight: 600; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   header .sub { margin-top: 2px; font-size: 12px; opacity: .85; }
+  header .shelf-btn {
+    flex: 0 0 auto; background: rgba(255,255,255,.16); color: #fff; border: 1px solid rgba(255,255,255,.35);
+    padding: 6px 12px; border-radius: 999px; font-size: 13px; font-family: inherit;
+  }
   nav { display: flex; gap: 6px; padding: 10px 12px; background: #fff; border-bottom: 1px solid var(--line); overflow-x: auto; }
   nav button {
     flex: 0 0 auto; border: 1px solid var(--line); background: #fff; color: var(--muted);
@@ -82,7 +87,10 @@ export function renderApp(bookName: string): string {
 </head>
 <body>
 <header>
-  <h1 id="book-name">${bookName}</h1>
+  <div class="bar">
+    <h1 id="book-name">书架</h1>
+    <button class="shelf-btn" data-act="shelf">书架</button>
+  </div>
   <div class="sub" id="book-stat">加载中…</div>
 </header>
 <nav id="tabs">
@@ -97,8 +105,9 @@ export function renderApp(bookName: string): string {
 <script>
 (function () {
   var state = {
-    tab: 'chapters', project: null, stats: null, diagnostics: [],
-    editing: null, aiConfig: null, chat: [], busy: false, showSettings: false
+    book: null, books: [], shelf: false, tab: 'chapters',
+    project: null, stats: null, diagnostics: [],
+    editing: null, aiConfig: null, chat: [], busy: false, showSettings: false, aiChapterId: null
   };
   var view = document.getElementById('view');
   var tabs = document.getElementById('tabs');
@@ -118,8 +127,13 @@ export function renderApp(bookName: string): string {
     toast._t = setTimeout(function () { el.className = 'toast'; }, 2600);
   }
 
+  function withBook(path) {
+    if (!state.book || path.indexOf('/api/books') === 0) return path;
+    return path + (path.indexOf('?') >= 0 ? '&' : '?') + 'book=' + encodeURIComponent(state.book);
+  }
+
   function api(path, opts) {
-    return fetch(path, opts).then(function (r) {
+    return fetch(withBook(path), opts).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (data) {
         if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
         return data;
@@ -127,18 +141,36 @@ export function renderApp(bookName: string): string {
     });
   }
 
+  function loadBooks() {
+    return api('/api/books').then(function (d) {
+      state.books = d.books;
+      var saved = null;
+      try { saved = localStorage.getItem('hlw-book'); } catch (e) { saved = null; }
+      var has = null;
+      state.books.forEach(function (b) { if (b.file === saved) has = b.file; });
+      if (!has) has = state.books.length ? state.books[0].file : null;
+      state.book = has;
+      if (state.book) { try { localStorage.setItem('hlw-book', state.book); } catch (e) {} }
+      state.shelf = !state.books.length;
+      return d;
+    });
+  }
+
   function refresh() {
-    return Promise.all([api('/api/project'), api('/api/ai/config')]).then(function (arr) {
-      var d = arr[0];
-      state.project = d.project;
-      state.stats = d.stats;
-      state.diagnostics = d.diagnostics;
-      state.aiConfig = arr[1];
-      var s = state.stats;
-      document.getElementById('book-name').textContent = d.project.name;
-      document.getElementById('book-stat').textContent =
-        s.chapters + ' 章 · ' + s.totalWords + ' 字 · ' + d.diagnostics.length + ' 条提醒';
-      render();
+    return loadBooks().then(function () {
+      if (!state.book) { render(); return null; }
+      return Promise.all([api('/api/project'), api('/api/ai/config')]).then(function (arr) {
+        var d = arr[0];
+        state.project = d.project;
+        state.stats = d.stats;
+        state.diagnostics = d.diagnostics;
+        state.aiConfig = arr[1];
+        var s = state.stats;
+        document.getElementById('book-name').textContent = d.project.name;
+        document.getElementById('book-stat').textContent =
+          s.chapters + ' 章 · ' + s.totalWords + ' 字 · ' + d.diagnostics.length + ' 条提醒';
+        render();
+      });
     }).catch(function (e) { toast(e.message, true); });
   }
 
@@ -147,6 +179,32 @@ export function renderApp(bookName: string): string {
     if (state.project) state.project.chapters.forEach(function (c) { if (c.id === id) found = c; });
     return found;
   }
+
+  // ---------- 书架 ----------
+
+  function renderShelf() {
+    var html = '';
+    if (!state.books.length) {
+      html += '<div class="empty">书架还空着，先建一本。</div>';
+    }
+    state.books.forEach(function (b) {
+      var cur = b.file === state.book;
+      html += '<div class="card"><div class="row"><div class="grow">' +
+        '<h2>' + esc(b.name) + (cur ? '<span class="tag">当前</span>' : '') + '</h2>' +
+        '<div class="meta">' + b.chapters + ' 章 · ' + b.words + ' 字' +
+        (b.foreshadowsOpen ? ' · ' + b.foreshadowsOpen + ' 条伏笔没回收' : '') +
+        (b.author ? ' · ' + esc(b.author) : '') + '</div>' +
+        '</div><button class="btn" data-act="open-book" data-file="' + esc(b.file) + '">打开</button></div></div>';
+    });
+    html += '<div class="card"><h2>开一个新故事</h2>' +
+      '<label>书名</label><input id="nb-name" placeholder="比如：青瓦台记事">' +
+      '<label>作者（可不填）</label><input id="nb-author" placeholder="你的名字">' +
+      '<button class="btn primary block" data-act="create-book">新建</button>' +
+      '<div class="meta" style="margin-top:8px">新故事会是独立的一个 .json 文件，和原来的互不影响。</div></div>';
+    return html;
+  }
+
+  // ---------- 书内各页 ----------
 
   function renderChapters() {
     if (state.editing) return renderEditor();
@@ -182,7 +240,7 @@ export function renderApp(bookName: string): string {
   function renderAiSetup() {
     var cfg = state.aiConfig || { baseUrl: '', model: '' };
     return '<div class="card"><h2>先配一下模型</h2>' +
-      '<div class="meta">用一个 DeepSeek 的 API Key（在 platform.deepseek.com 的「API keys」里创建）。Key 只存在这台电脑上。</div>' +
+      '<div class="meta">用一个 DeepSeek 的 API Key（platform.deepseek.com 的「API keys」里创建）。Key 只存在这台电脑上。</div>' +
       '<label>API Key</label><input id="ai-key" placeholder="sk-...">' +
       '<label>接口地址</label><input id="ai-base" value="' + esc(cfg.baseUrl) + '">' +
       '<label>模型</label><input id="ai-model" value="' + esc(cfg.model) + '">' +
@@ -193,7 +251,7 @@ export function renderApp(bookName: string): string {
     if (state.showSettings || !state.aiConfig || !state.aiConfig.configured) return renderAiSetup();
     var html = '<div class="chat" id="chat">';
     if (!state.chat.length) {
-      html += '<div class="empty">问它情节、让它接着写、让它挑毛病都行。<br>它已经读过你这本书的人物、伏笔和最近几章。</div>';
+      html += '<div class="empty">问它情节、让它接着写、让它挑毛病都行。<br>它读过这本书的人物、伏笔和最近几章。</div>';
     }
     state.chat.forEach(function (m, i) { html += bubbleHtml(m, i); });
     html += '</div>';
@@ -273,13 +331,15 @@ export function renderApp(bookName: string): string {
   }
 
   function render() {
-    if (state.tab === 'chapters') view.innerHTML = renderChapters();
+    if (state.shelf || !state.book || !state.project) {
+      view.innerHTML = state.books.length || state.shelf ? renderShelf() : '<div class="empty">加载中…</div>';
+    } else if (state.tab === 'chapters') view.innerHTML = renderChapters();
     else if (state.tab === 'ai') view.innerHTML = renderAi();
     else if (state.tab === 'chars') view.innerHTML = renderChars();
     else if (state.tab === 'foreshadows') view.innerHTML = renderForeshadows();
     else view.innerHTML = renderCheck();
     Array.prototype.forEach.call(tabs.children, function (b) {
-      b.className = b.dataset.tab === state.tab ? 'on' : '';
+      b.className = b.dataset.tab === state.tab && !state.shelf ? 'on' : '';
     });
     var chat = document.getElementById('chat');
     if (chat) chat.scrollIntoView({ block: 'end' });
@@ -287,8 +347,8 @@ export function renderApp(bookName: string): string {
 
   // ---------- 流式对话 ----------
 
-  function streamPost(url, body, onDelta) {
-    return fetch(url, {
+  function streamPost(path, body, onDelta) {
+    return fetch(withBook(path), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body)
@@ -328,7 +388,7 @@ export function renderApp(bookName: string): string {
     });
   }
 
-  function runChat(url, payload, chapterId) {
+  function runChat(path, payload, chapterId) {
     if (state.busy) { toast('等它写完这一句', true); return; }
     state.busy = true;
     var bubble = { role: 'assistant', content: '', pending: true, chapterId: chapterId || null };
@@ -336,7 +396,7 @@ export function renderApp(bookName: string): string {
     var index = state.chat.length - 1;
     render();
 
-    streamPost(url, payload, function (delta) {
+    streamPost(path, payload, function (delta) {
       if (bubble.pending) {
         bubble.pending = false;
         var node = document.getElementById('bubble-' + index);
@@ -371,12 +431,6 @@ export function renderApp(bookName: string): string {
     runChat('/api/ai/chat', { messages: messages, chapterId: state.aiChapterId || null }, null);
   }
 
-  function quickPrompt(text) {
-    var input = document.getElementById('ai-input');
-    if (input) input.value = text;
-    sendChat();
-  }
-
   function continueWriting(chapterId) {
     state.aiChapterId = chapterId || null;
     var ch = chapterId ? chapterById(chapterId) : null;
@@ -392,8 +446,32 @@ export function renderApp(bookName: string): string {
     if (!el) return;
     var act = el.dataset.act;
 
+    if (act === 'shelf') { state.shelf = !state.shelf; render(); return; }
+    if (act === 'open-book') {
+      state.book = el.dataset.file;
+      try { localStorage.setItem('hlw-book', state.book); } catch (e) {}
+      state.shelf = false; state.tab = 'chapters'; state.chat = []; state.editing = null;
+      refresh(); return;
+    }
+    if (act === 'create-book') {
+      var nbName = document.getElementById('nb-name').value.trim();
+      var nbAuthor = document.getElementById('nb-author').value.trim();
+      if (!nbName) { toast('先给新故事起个名', true); return; }
+      api('/api/books', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: nbName, author: nbAuthor })
+      }).then(function (d) {
+        state.book = d.file;
+        try { localStorage.setItem('hlw-book', d.file); } catch (e) {}
+        state.shelf = false; state.tab = 'chapters';
+        toast('已建好《' + d.name + '》');
+        return refresh();
+      }).catch(function (e) { toast(e.message, true); });
+      return;
+    }
+
     if (act === 'tab') {
-      state.tab = el.dataset.tab; state.editing = null; state.showSettings = false; render(); return;
+      state.tab = el.dataset.tab; state.shelf = false; state.editing = null; state.showSettings = false; render(); return;
     }
     if (act === 'new-chapter') { state.editing = 'new'; render(); return; }
     if (act === 'cancel-edit') { state.editing = null; render(); return; }
@@ -467,9 +545,13 @@ export function renderApp(bookName: string): string {
       return;
     }
     if (act === 'ai-send') { sendChat(); return; }
-    if (act === 'ai-quick') { quickPrompt(el.dataset.q); return; }
+    if (act === 'ai-quick') {
+      var qi = document.getElementById('ai-input');
+      if (qi) qi.value = el.dataset.q;
+      sendChat(); return;
+    }
     if (act === 'ai-continue') {
-      state.tab = 'ai'; state.showSettings = false; state.editing = null;
+      state.tab = 'ai'; state.shelf = false; state.showSettings = false; state.editing = null;
       continueWriting(el.dataset.id); return;
     }
     if (act === 'ai-insert') {
@@ -498,7 +580,7 @@ export function renderApp(bookName: string): string {
   });
 
   refresh();
-  setInterval(function () { if (!state.busy) refresh(); }, 20000);
+  setInterval(function () { if (!state.busy) loadBooks(); }, 30000);
 })();
 </script>
 </body>

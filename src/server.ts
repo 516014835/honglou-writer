@@ -1,6 +1,8 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { networkInterfaces } from 'node:os';
+import { readdir } from 'node:fs/promises';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { checkProject } from './check.js';
 import {
   AiError,
@@ -11,15 +13,17 @@ import {
   requestCompletion,
   saveAiConfig,
 } from './ai.js';
-import { loadProject, saveProject } from './io.js';
-import { addChapter, addCharacter, findChapter, payForeshadow, plantForeshadow } from './project.js';
+import { loadProject, ProjectFileError, saveProject } from './io.js';
+import { addChapter, addCharacter, createProject, findChapter, payForeshadow, plantForeshadow } from './project.js';
 import { projectStat } from './stats.js';
 import type { Chapter, Project } from './types.js';
 import { renderApp } from './ui.js';
 
 export interface ServeOptions {
-  /** 作品文件路径 */
-  file: string;
+  /** 只开这一本书（可选） */
+  file?: string;
+  /** 书架目录，默认取 file 所在目录，否则当前目录 */
+  dir?: string;
   /** 端口，0 表示随机（测试用） */
   port?: number;
   /** 监听地址，默认 0.0.0.0 让同一 Wi-Fi 的手机也能连 */
@@ -30,7 +34,19 @@ export interface RunningServer {
   port: number;
   /** 可访问的地址列表，第一项是本机，其余是局域网 */
   urls: string[];
+  /** 书架目录 */
+  dir: string;
   close: () => Promise<void>;
+}
+
+/** 书架里的一本书 */
+export interface BookSummary {
+  file: string;
+  name: string;
+  author?: string;
+  chapters: number;
+  words: number;
+  foreshadowsOpen: number;
 }
 
 const MAX_BODY = 8 * 1024 * 1024;
@@ -105,17 +121,93 @@ export function lanAddresses(): string[] {
   return out;
 }
 
+/** 把书名变成安全的文件名 */
+export function bookFileName(name: string): string {
+  const cleaned = name
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, '')
+    .slice(0, 40);
+  return `${cleaned || '未命名'}.json`;
+}
+
 /**
  * 启动手机/局域网可访问的写作界面。
  *
- * 数据仍然保存在你传入的那个 JSON 文件里，网页只是它的一个操作界面。
+ * 目录里的每个 `.json` 都是一本书，网页上可以在书架里切换、新建。
  */
 export async function startServer(options: ServeOptions): Promise<RunningServer> {
-  const project: Project = await loadProject(options.file);
+  const booksDir = resolve(
+    options.dir ?? (options.file ? dirname(resolve(options.file)) : process.cwd()),
+  );
+  const defaultBook = options.file ? basename(resolve(options.file)) : undefined;
   const port = options.port ?? 4321;
   const host = options.host ?? '0.0.0.0';
 
-  const persist = () => saveProject(options.file, project);
+  const cache = new Map<string, Project>();
+
+  /** 把文件名收敛到书架目录内，防止 ../ 穿越 */
+  function resolveBookFile(name: string | null): string {
+    const target = (name ?? defaultBook ?? '').trim();
+    if (!target) throw new HttpError(400, '没指定是哪本书');
+    const abs = resolve(booksDir, target);
+    if (dirname(abs) !== booksDir || extname(abs).toLowerCase() !== '.json') {
+      throw new HttpError(400, `书的名字不对：${target}`);
+    }
+    return basename(abs);
+  }
+
+  async function getBook(file: string): Promise<Project> {
+    const cached = cache.get(file);
+    if (cached) return cached;
+    try {
+      const loaded = await loadProject(join(booksDir, file));
+      cache.set(file, loaded);
+      return loaded;
+    } catch (error) {
+      if (error instanceof ProjectFileError) throw new HttpError(400, error.message);
+      throw new HttpError(500, (error as Error).message);
+    }
+  }
+
+  async function listBooks(): Promise<BookSummary[]> {
+    let entries: string[];
+    try {
+      entries = await readdir(booksDir);
+    } catch {
+      throw new HttpError(500, `读不了书架目录：${booksDir}`);
+    }
+    const books: BookSummary[] = [];
+    for (const entry of entries) {
+      if (extname(entry).toLowerCase() !== '.json') continue;
+      try {
+        const project = await getBook(entry);
+        const stat = projectStat(project);
+        books.push({
+          file: entry,
+          name: project.name,
+          ...(project.author ? { author: project.author } : {}),
+          chapters: stat.chapters,
+          words: stat.totalWords,
+          foreshadowsOpen: project.foreshadows.filter((f) => f.status === 'open').length,
+        });
+      } catch {
+        // 不是作品文件的 json 直接跳过（比如配置文件）
+      }
+    }
+    books.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
+    return books;
+  }
+
+  const server: Server = createServer((req, res) => {
+    handle(req, res).catch((error: unknown) => {
+      if (error instanceof HttpError) {
+        json(res, error.status, { error: error.message });
+        return;
+      }
+      json(res, 500, { error: (error as Error).message });
+    });
+  });
 
   /** 把上游模型的 SSE 原样转给浏览器；浏览器断开时顺手中断上游 */
   async function streamChat(
@@ -162,23 +254,14 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
     res.end();
   }
 
-  const server: Server = createServer((req, res) => {
-    handle(req, res).catch((error: unknown) => {
-      if (error instanceof HttpError) {
-        json(res, error.status, { error: error.message });
-        return;
-      }
-      json(res, 500, { error: (error as Error).message });
-    });
-  });
-
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const path = url.pathname;
     const method = req.method ?? 'GET';
+    const bookParam = url.searchParams.get('book');
 
     if (method === 'GET' && (path === '/' || path === '/index.html')) {
-      html(res, 200, renderApp(project.name));
+      html(res, 200, renderApp('书架'));
       return;
     }
 
@@ -187,8 +270,41 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
       return;
     }
 
+    if (method === 'GET' && path === '/api/books') {
+      json(res, 200, { dir: booksDir, books: await listBooks() });
+      return;
+    }
+
+    if (method === 'POST' && path === '/api/books') {
+      const body = await readJson(req);
+      const name = str(body.name).trim() || '未命名';
+      const author = str(body.author).trim();
+      const file = bookFileName(name);
+      const abs = join(booksDir, file);
+      if (dirname(abs) !== booksDir) throw new HttpError(400, '书名不合法');
+
+      let exists = true;
+      try {
+        await loadProject(abs);
+      } catch {
+        exists = false;
+      }
+      if (exists) throw new HttpError(409, `已经有叫「${name}」的书了`);
+
+      const project = createProject(name, author || undefined);
+      await saveProject(abs, project);
+      cache.set(file, project);
+      json(res, 201, { file, name: project.name });
+      return;
+    }
+
+    const file = resolveBookFile(bookParam);
+    const project = await getBook(file);
+    const persist = () => saveProject(join(booksDir, file), project);
+
     if (method === 'GET' && path === '/api/project') {
       json(res, 200, {
+        file,
         project,
         stats: projectStat(project),
         diagnostics: checkProject(project),
@@ -355,9 +471,9 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
     throw new HttpError(404, '页面不存在');
   }
 
-  await new Promise<void>((resolve, reject) => {
+  await new Promise<void>((resolveListen, reject) => {
     server.once('error', reject);
-    server.listen(port, host, () => resolve());
+    server.listen(port, host, () => resolveListen());
   });
 
   const address = server.address();
@@ -370,9 +486,10 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
   return {
     port: actualPort,
     urls,
+    dir: booksDir,
     close: () =>
-      new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
+      new Promise<void>((resolveClose, reject) => {
+        server.close((error) => (error ? reject(error) : resolveClose()));
       }),
   };
 }

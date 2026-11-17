@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -32,7 +32,7 @@ describe('startServer', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/html');
     const body = await res.text();
-    expect(body).toContain('红楼梦');
+    expect(body).toContain('书架');
     expect(body).toContain('章回');
   });
 
@@ -144,5 +144,74 @@ describe('startServer', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-disposition')).toContain('attachment');
     expect((await res.json()) as { name: string }).toMatchObject({ name: '红楼梦' });
+  });
+
+  it('书架列出目录里的书', async () => {
+    const res = await fetch(`${base()}/api/books`);
+    const data = (await res.json()) as { dir: string; books: Array<{ file: string; name: string }> };
+    expect(data.books).toHaveLength(1);
+    expect(data.books[0]?.file).toBe('book.json');
+    expect(data.books[0]?.name).toBe('红楼梦');
+    expect(data.dir).toBe(dir);
+  });
+
+  it('新建故事后能切换过去，两者互不影响', async () => {
+    const create = await fetch(`${base()}/api/books`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '第二本', author: '我' }),
+    });
+    expect(create.status).toBe(201);
+    const created = (await create.json()) as { file: string };
+    expect(created.file).toBe('第二本.json');
+
+    const list = (await (await fetch(`${base()}/api/books`)).json()) as {
+      books: Array<{ file: string }>;
+    };
+    expect(list.books).toHaveLength(2);
+
+    await fetch(`${base()}/api/chapter?book=${encodeURIComponent(created.file)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: '新故事的第一回', body: '开局' }),
+    });
+
+    const first = (await (await fetch(`${base()}/api/project?book=book.json`)).json()) as {
+      project: { chapters: unknown[] };
+    };
+    const second = (
+      await (await fetch(`${base()}/api/project?book=${encodeURIComponent(created.file)}`)).json()
+    ) as { project: { chapters: Array<{ title: string }> } };
+
+    expect(first.project.chapters).toHaveLength(1);
+    expect(second.project.chapters).toHaveLength(1);
+    expect(second.project.chapters[0]?.title).toBe('新故事的第一回');
+  });
+
+  it('同名书不允许重复建', async () => {
+    await fetch(`${base()}/api/books`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '重名' }),
+    });
+    const again = await fetch(`${base()}/api/books`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '重名' }),
+    });
+    expect(again.status).toBe(409);
+  });
+
+  it('book 参数不允许跳出书架目录', async () => {
+    const res = await fetch(`${base()}/api/project?book=${encodeURIComponent('../evil.json')}`);
+    expect(res.status).toBe(400);
+  });
+
+  it('目录里的非作品 json 不算成书', async () => {
+    await writeFile(join(dir, 'config.json'), '{"hello":1}', 'utf8');
+    const data = (await (await fetch(`${base()}/api/books`)).json()) as {
+      books: Array<{ file: string }>;
+    };
+    expect(data.books.map((b) => b.file)).not.toContain('config.json');
   });
 });
